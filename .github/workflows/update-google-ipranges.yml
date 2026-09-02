@@ -42,38 +42,46 @@ jobs:
           import json
           from pathlib import Path
 
-          path = Path("dist/google-ipranges.json")
-          if not path.is_file():
-              raise SystemExit("relay output missing")
-
-          data = json.loads(path.read_text(encoding="utf-8"))
-          ranges = data.get("ranges", [])
-          counts = data.get("counts", {})
-          sources = data.get("sources", {})
-
-          expected_sources = {
+          expected = {
               "common-crawlers",
               "special-crawlers",
               "user-triggered-fetchers-google",
               "user-triggered-agents",
           }
 
-          if set(sources) != expected_sources:
-              raise SystemExit(f"unexpected sources: {sorted(sources)}")
+          aggregate = Path("dist/google-ipranges.json")
+          if not aggregate.is_file():
+              raise SystemExit("aggregate relay output missing")
+
+          data = json.loads(aggregate.read_text(encoding="utf-8"))
+          ranges = data.get("ranges", [])
+          counts = data.get("counts", {})
+          sources = data.get("sources", {})
+
+          if set(sources) != expected:
+              raise SystemExit(f"unexpected aggregate sources: {sorted(sources)}")
           if not isinstance(ranges, list) or not ranges:
               raise SystemExit("empty aggregate ranges")
           if int(counts.get("unique_cidrs", 0)) < 10:
               raise SystemExit("unique CIDR count unexpectedly low")
 
-          for row in ranges:
-              if row.get("source") not in expected_sources:
-                  raise SystemExit(f"unexpected source label: {row}")
-              ipaddress.ip_network(row["cidr"], strict=False)
-
-          if "user-triggered-fetchers.json" in json.dumps(data):
-              excluded = data.get("policy", {}).get("excluded_source")
-              if excluded != "user-triggered-fetchers.json":
-                  raise SystemExit("broad user-triggered feed unexpectedly present")
+          for name in expected:
+              p = Path(f"dist/{name}.json")
+              if not p.is_file():
+                  raise SystemExit(f"source relay missing: {p}")
+              source_doc = json.loads(p.read_text(encoding="utf-8"))
+              prefixes = source_doc.get("prefixes")
+              if not isinstance(prefixes, list) or not prefixes:
+                  raise SystemExit(f"invalid prefixes in {p}")
+              for row in prefixes:
+                  if not isinstance(row, dict):
+                      raise SystemExit(f"invalid prefix row in {p}")
+                  values = [row.get("ipv4Prefix"), row.get("ipv6Prefix")]
+                  values = [v for v in values if v]
+                  if not values:
+                      raise SystemExit(f"empty prefix row in {p}")
+                  for cidr in values:
+                      ipaddress.ip_network(cidr, strict=False)
 
           print(
               "VALIDATION=OK",
@@ -84,13 +92,13 @@ jobs:
 
       - name: Commit relay only when changed
         run: |
-          if [ -z "$(git status --porcelain -- dist/google-ipranges.json)" ]; then
+          if [ -z "$(git status --porcelain -- dist/)" ]; then
             echo "RELAY_CHANGE=NO"
             exit 0
           fi
 
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add dist/google-ipranges.json
+          git add dist/
           git commit -m "Update official Google IP ranges"
           git push
