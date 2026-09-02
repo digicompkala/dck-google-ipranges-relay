@@ -16,9 +16,10 @@ SOURCES = {
     "user-triggered-agents": "https://developers.google.com/static/crawling/ipranges/user-triggered-agents.json",
 }
 
-OUTPUT = Path("dist/google-ipranges.json")
+DIST = Path("dist")
+OUTPUT = DIST / "google-ipranges.json"
 USER_AGENT = (
-    "DCK-Google-IPRanges-Relay/1.0 "
+    "DCK-Google-IPRanges-Relay/1.1 "
     "(+https://github.com/digicompkala/dck-google-ipranges-relay)"
 )
 MAX_BODY = 5 * 1024 * 1024
@@ -28,7 +29,17 @@ def utc_now() -> str:
     return dt.datetime.now(dt.timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
 
 
-def fetch_source(name: str, url: str) -> dict:
+def atomic_json_write(path: Path, data: dict) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name(path.name + ".tmp")
+    tmp.write_text(
+        json.dumps(data, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    tmp.replace(path)
+
+
+def fetch_source(name: str, url: str) -> tuple[dict, dict]:
     req = urllib.request.Request(
         url,
         headers={
@@ -60,10 +71,14 @@ def fetch_source(name: str, url: str) -> dict:
     if not isinstance(prefixes, list) or not prefixes:
         raise RuntimeError(f"{name}: prefixes missing or empty")
 
+    normalized_prefixes = []
     networks = []
+
     for row in prefixes:
         if not isinstance(row, dict):
             continue
+
+        normalized_row = {}
         for field in ("ipv4Prefix", "ipv6Prefix"):
             value = row.get(field)
             if not value:
@@ -72,7 +87,13 @@ def fetch_source(name: str, url: str) -> dict:
                 net = ipaddress.ip_network(str(value).strip(), strict=False)
             except ValueError as exc:
                 raise RuntimeError(f"{name}: invalid CIDR {value!r}") from exc
-            networks.append(str(net))
+
+            cidr = str(net)
+            normalized_row[field] = cidr
+            networks.append(cidr)
+
+        if normalized_row:
+            normalized_prefixes.append(normalized_row)
 
     networks = sorted(
         set(networks),
@@ -83,33 +104,50 @@ def fetch_source(name: str, url: str) -> dict:
         ),
     )
 
-    if not networks:
+    if not networks or not normalized_prefixes:
         raise RuntimeError(f"{name}: no valid CIDRs")
 
-    return {
+    # Preserve Google's expected crawler-feed schema so the WordPress plugin
+    # can consume the relay without changing its parser.
+    relay_document = {
+        "creationTime": str(data.get("creationTime", ""))[:100],
+        "prefixes": normalized_prefixes,
+    }
+
+    meta = {
         "url": url,
-        "creation_time": str(data.get("creationTime", ""))[:100],
+        "creation_time": relay_document["creationTime"],
         "raw_sha256": hashlib.sha256(body).hexdigest(),
         "range_count": len(networks),
         "ranges": networks,
     }
 
+    return meta, relay_document
 
-def semantic_payload() -> dict:
+
+def canonical_json(value: dict) -> bytes:
+    return json.dumps(
+        value,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+
+
+def main() -> int:
     sources = {}
     flat = []
+    relay_documents = {}
 
     for name, url in SOURCES.items():
-        meta = fetch_source(name, url)
+        meta, relay_document = fetch_source(name, url)
         sources[name] = meta
+        relay_documents[name] = relay_document
         flat.extend({"source": name, "cidr": cidr} for cidr in meta["ranges"])
         print(
             f"SOURCE={name} RANGES={meta['range_count']} "
             f"CREATION={meta['creation_time']}"
         )
-
-    if not flat:
-        raise RuntimeError("aggregate range list is empty")
 
     unique_cidrs = sorted(
         {row["cidr"] for row in flat},
@@ -125,7 +163,7 @@ def semantic_payload() -> dict:
             f"aggregate CIDR count unexpectedly low: {len(unique_cidrs)}"
         )
 
-    return {
+    payload = {
         "schema_version": 1,
         "policy": {
             "included_sources": list(SOURCES.keys()),
@@ -145,30 +183,7 @@ def semantic_payload() -> dict:
         },
     }
 
-
-def canonical_json(value: dict) -> bytes:
-    return json.dumps(
-        value,
-        ensure_ascii=False,
-        sort_keys=True,
-        separators=(",", ":"),
-    ).encode("utf-8")
-
-
-def main() -> int:
-    payload = semantic_payload()
     payload_hash = hashlib.sha256(canonical_json(payload)).hexdigest()
-
-    old = None
-    if OUTPUT.exists():
-        try:
-            old = json.loads(OUTPUT.read_text(encoding="utf-8"))
-        except Exception:
-            old = None
-
-    if isinstance(old, dict) and old.get("payload_sha256") == payload_hash:
-        print(f"STATUS=NO_CHANGE PAYLOAD_SHA256={payload_hash}")
-        return 0
 
     document = {
         **payload,
@@ -180,19 +195,28 @@ def main() -> int:
         },
     }
 
-    OUTPUT.parent.mkdir(parents=True, exist_ok=True)
-    tmp = OUTPUT.with_suffix(".json.tmp")
-    tmp.write_text(
-        json.dumps(document, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
-        encoding="utf-8",
-    )
-    tmp.replace(OUTPUT)
+    # Always materialize the four source-compatible relay files. Git will only
+    # commit them if their content actually changed.
+    for name, relay_document in relay_documents.items():
+        atomic_json_write(DIST / f"{name}.json", relay_document)
 
-    print(
-        "STATUS=UPDATED "
-        f"UNIQUE_CIDRS={document['counts']['unique_cidrs']} "
-        f"PAYLOAD_SHA256={payload_hash}"
-    )
+    old = None
+    if OUTPUT.exists():
+        try:
+            old = json.loads(OUTPUT.read_text(encoding="utf-8"))
+        except Exception:
+            old = None
+
+    if not isinstance(old, dict) or old.get("payload_sha256") != payload_hash:
+        atomic_json_write(OUTPUT, document)
+        print(
+            "STATUS=UPDATED "
+            f"UNIQUE_CIDRS={document['counts']['unique_cidrs']} "
+            f"PAYLOAD_SHA256={payload_hash}"
+        )
+    else:
+        print(f"STATUS=NO_CHANGE PAYLOAD_SHA256={payload_hash}")
+
     return 0
 
 
