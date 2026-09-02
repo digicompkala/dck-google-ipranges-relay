@@ -84,7 +84,7 @@ jobs:
 
       - name: Commit relay only when changed
         run: |
-          if git diff --quiet -- dist/google-ipranges.json; then
+          if [ -z "$(git status --porcelain -- dist/google-ipranges.json)" ]; then
             echo "RELAY_CHANGE=NO"
             exit 0
           fi
