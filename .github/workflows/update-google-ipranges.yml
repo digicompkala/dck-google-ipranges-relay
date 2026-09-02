@@ -1,0 +1,96 @@
+name: Update Google IP ranges relay
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "17 */6 * * *"
+  push:
+    branches:
+      - main
+    paths:
+      - "scripts/update_google_ipranges.py"
+      - ".github/workflows/update-google-ipranges.yml"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: google-ipranges-relay-update
+  cancel-in-progress: false
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Fetch and validate official Google ranges
+        run: python scripts/update_google_ipranges.py
+
+      - name: Validate generated relay
+        run: |
+          python - <<'PY'
+          import ipaddress
+          import json
+          from pathlib import Path
+
+          path = Path("dist/google-ipranges.json")
+          if not path.is_file():
+              raise SystemExit("relay output missing")
+
+          data = json.loads(path.read_text(encoding="utf-8"))
+          ranges = data.get("ranges", [])
+          counts = data.get("counts", {})
+          sources = data.get("sources", {})
+
+          expected_sources = {
+              "common-crawlers",
+              "special-crawlers",
+              "user-triggered-fetchers-google",
+              "user-triggered-agents",
+          }
+
+          if set(sources) != expected_sources:
+              raise SystemExit(f"unexpected sources: {sorted(sources)}")
+          if not isinstance(ranges, list) or not ranges:
+              raise SystemExit("empty aggregate ranges")
+          if int(counts.get("unique_cidrs", 0)) < 10:
+              raise SystemExit("unique CIDR count unexpectedly low")
+
+          for row in ranges:
+              if row.get("source") not in expected_sources:
+                  raise SystemExit(f"unexpected source label: {row}")
+              ipaddress.ip_network(row["cidr"], strict=False)
+
+          if "user-triggered-fetchers.json" in json.dumps(data):
+              excluded = data.get("policy", {}).get("excluded_source")
+              if excluded != "user-triggered-fetchers.json":
+                  raise SystemExit("broad user-triggered feed unexpectedly present")
+
+          print(
+              "VALIDATION=OK",
+              f"SOURCE_ENTRIES={counts.get('source_entries')}",
+              f"UNIQUE_CIDRS={counts.get('unique_cidrs')}",
+          )
+          PY
+
+      - name: Commit relay only when changed
+        run: |
+          if git diff --quiet -- dist/google-ipranges.json; then
+            echo "RELAY_CHANGE=NO"
+            exit 0
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add dist/google-ipranges.json
+          git commit -m "Update official Google IP ranges"
+          git push
