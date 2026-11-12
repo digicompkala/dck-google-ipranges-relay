@@ -5,8 +5,8 @@
     "source_entries": 1113,
     "unique_cidrs": 1113
   },
-  "generated_at": "2026-11-11T19:35:32Z",
-  "payload_sha256": "4fa711d3fa962e38f6a3d89d95796154735178cb6e34ef479b7de5350b080bd5",
+  "generated_at": "2026-11-12T19:53:54Z",
+  "payload_sha256": "209b54bc61a30babd75844fd15f3f69f73dfc5356a337bb8968bbf325a5080a8",
   "policy": {
     "excluded_reason": "This broader feed may include user-controlled Google Cloud/App Engine fetchers; it is intentionally not trusted as a blanket whitelist source.",
     "excluded_source": "user-triggered-fetchers.json",
@@ -4478,7 +4478,7 @@
   "schema_version": 1,
   "sources": {
     "common-crawlers": {
-      "creation_time": "2026-11-11T15:46:10.000000",
+      "creation_time": "2026-11-12T15:45:54.000000",
       "range_count": 317,
       "ranges": [
         "34.22.85.0/27",
@@ -4799,11 +4799,11 @@
         "2001:4860:4801:b5::/64",
         "2001:4860:4801:b6::/64"
       ],
-      "raw_sha256": "73c586ac27e205fc9f5103a93a57562d27531f35a635c113bff107be6958ce52",
+      "raw_sha256": "66ccc7fd2e87a6e9fe518d606a23b86c401b004fff69e7bba952cc9d673ab64c",
       "url": "https://developers.google.com/static/crawling/ipranges/common-crawlers.json"
     },
     "special-crawlers": {
-      "creation_time": "2026-11-11T15:46:13.000000",
+      "creation_time": "2026-11-12T15:46:02.000000",
       "range_count": 272,
       "ranges": [
         "66.249.87.0/27",
@@ -5079,11 +5079,11 @@
         "2001:4860:4801:20b5::/64",
         "2001:4860:4801:20b6::/64"
       ],
-      "raw_sha256": "cae46e72bc0dd049e65f602c76f4c62e413a451d71c6df4eb395d198c23fbe22",
+      "raw_sha256": "27fa59e9b66ba9e7448103752845e2e551309839b5f74faaa702dfeb78f73264",
       "url": "https://developers.google.com/static/crawling/ipranges/special-crawlers.json"
     },
     "user-triggered-agents": {
-      "creation_time": "2026-11-11T15:46:12.000000",
+      "creation_time": "2026-11-12T15:45:54.000000",
       "range_count": 20,
       "ranges": [
         "74.125.232.0/28",
@@ -5107,11 +5107,11 @@
         "2001:4860:c::60/124",
         "2001:4860:c::70/124"
       ],
-      "raw_sha256": "0f596b76ead622417c6c04541ed8cd50edbfccf1ab98ac414a1c4b2cc6bfef0e",
+      "raw_sha256": "e7c51f2430144aa06c0ec09f15a75fc57bdf502990bc6da3ec17d14de356372c",
       "url": "https://developers.google.com/static/crawling/ipranges/user-triggered-agents.json"
     },
     "user-triggered-fetchers-google": {
-      "creation_time": "2026-11-11T15:46:29.000000",
+      "creation_time": "2026-11-12T15:45:55.000000",
       "range_count": 504,
       "ranges": [
         "64.233.172.0/27",
@@ -5619,7 +5619,7 @@
         "2001:4860:4801:416a::/64",
         "2001:4860:4801:416b::/64"
       ],
-      "raw_sha256": "e4ce85c86b3980843114a392036bc2e2e0fe1cfedefec36917553e16976f75fa",
+      "raw_sha256": "161e767af07495b9aa04ba24efcb73c733b42f029eb7b872b593c7936d0129cc",
       "url": "https://developers.google.com/static/crawling/ipranges/user-triggered-fetchers-google.json"
     }
   }
